@@ -1,0 +1,29 @@
+expr = ws "(" ws subexpr:a space subexpr:b space third:c ws ")" ws expr:d {Quadruple(:a, :b, :c, :d)} | ws {Int(0)};
+
+third = "(" ws seq:a ws ")" {:a};
+
+subexpr = term0:a plus subexpr:b {Sum(:a, :b)} | term0;
+term0 = term1:a (sub term1)+:b {buildSub(:a, :b)} | term1;
+term1 = term2:a mul term1:b {Mul(:a, :b)} | term2;
+term2 = term3:a (div term3)+:b {buildDiv(:a, :b)} | term3; 
+term3 = int | var | '('subexpr:e')' {:e} | '-'term3:e {Neg(:e)} | subexpr;
+
+seq = var:a ws seq:b {Pair(:a, :b)} | ws {Int(0)};
+
+space = ws "," ws;
+
+equal = ws '=' ws;
+
+var = alpha+$a {Var($a)};
+alpha = 'a'-'z' | 'A'-'Z' | '_';
+
+int = digit+$i {Int(s2i($i))};
+digit = '0'-'9';
+
+plus = ws '+' ws;
+sub = ws '-' ws;
+mul = ws '*' ws;
+div = ws '/' ws;
+
+ws = s*;
+s = ' ' | '\t' | '\n';

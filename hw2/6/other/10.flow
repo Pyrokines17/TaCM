@@ -1,0 +1,377 @@
+import lingo/pegcode/driver;
+import runtime;
+import ds/tree;
+import string;
+import maybe;
+
+Tocken ::= Int, Var, UnarSub, BinOp, None;
+
+Expr ::= Int, BinaryExpr, Var, Neg;
+Int(v: int);
+Neg(e: Expr);
+Var(name: string);
+
+BinOp ::= AddOp, MulOp, SubOp;
+AddOp(); 
+MulOp();  
+SubOp();
+UnarSub();
+
+BinaryExpr(v1: Expr, v2: Expr, op:BinOp);
+Fraction(numerator: int, denominator: int);
+ExpFraction(numerator: Expr, denominator: Expr);
+
+MyRule(before: ExpFraction, after: ExpFraction, weight: int);
+RuleWithContext(rule: MyRule, context: Tree<string, Expr>);
+CheckResult(result: bool, context: Tree<string, Expr>);
+
+weight_Expr(e: Expr){
+    switch(e: Expr){
+        BinaryExpr(l, r, op): weight_Expr(l) + weight_Expr(r) + 1;
+        default: 1;
+    }
+}
+
+weight_ExpFraction(e: ExpFraction){
+    weight_Expr(e.numerator) + weight_Expr(e.denominator);
+}
+
+generate_commutative_rule(rules: [Expr], rule: Expr){
+    switch(rule: Expr){
+        BinaryExpr(l, r, op): {
+            l_comm = generate_commutative_rule(rules, l);
+            r_comm = generate_commutative_rule(rules, r);
+            switch(op){
+                AddOp(): fold(l_comm, rules, \accl, lr -> concat(accl, fold(r_comm, [], \accr, rr -> arrayPush(arrayPush(accr, BinaryExpr(lr, rr, AddOp())),  BinaryExpr(rr, lr, AddOp())))));
+                MulOp(): fold(l_comm, rules, \accl, lr -> concat(accl, fold(r_comm, [], \accr, rr -> arrayPush(arrayPush(accr, BinaryExpr(lr, rr, MulOp())),  BinaryExpr(rr, lr, MulOp())))));
+                default: rules;
+            }
+        }
+        default: [rule];
+    }
+}
+
+
+generate_commutative_rules(rulesExp: [MyRule]){
+
+    fold(rulesExp, [], \acc, rule -> {
+        cr_n = generate_commutative_rule([], rule.before.numerator);
+        cr_d = generate_commutative_rule([], rule.before.denominator);
+        concat(acc, fold(cr_n, [], \accn, n -> concat(accn, fold(cr_d, [], \accd, d -> arrayPush(accd, MyRule(ExpFraction(n, d), rule.after, rule.weight))))));
+    });
+}
+
+
+gen_all_var(arr: [Expr]){
+    foldi(arr, [], \i, acci, xi -> arrayPush(acci, foldi(arr, arr[i], \j, accj, xj ->
+                                    if (i != j)  BinaryExpr(accj, xj, MulOp()) else accj
+                                )));
+}
+
+gen_var_for_mul(exp: Expr){
+    switch(exp: Expr){
+        BinaryExpr(l, r, op):{
+            switch(op){
+                MulOp():{
+                    variants = concat(gen_var_for_mul(l), gen_var_for_mul(r));
+                    println(variants);
+                    variants;
+                    //println(gen_all_var(variants));
+                    //gen_all_var(variants);
+                }
+                default: [exp];
+            }
+        }
+        Neg(v): fold(gen_var_for_mul(v), [], \acc, x -> arrayPush(acc, Neg(x)));
+        default: [exp];
+    }
+}
+
+
+check_coincidences(rule: Expr, e: Expr, context: Tree<string, Expr>){
+    
+    switch (rule: Expr){
+        BinaryExpr(l1, r1, op1): {
+            switch(e: Expr){
+                BinaryExpr(l2, r2, op2): {
+                    if (op1 != op2) {
+                        CheckResult(false, context);
+                    }
+                    else {
+                        chr_l = check_coincidences(l1, l2, context);
+                        if (chr_l.result) {check_coincidences(r1, r2, chr_l.context);}
+                        else {CheckResult(false, context);}
+                    }                    
+                }
+                default: CheckResult(false, context);
+            }
+        }
+        Var(name1): {
+            switch(lookupTree(context, name1)){
+                None(): CheckResult(true, setTree(context, name1, e));
+                Some(v): CheckResult(e == v, context);
+            }
+        }
+        Int(v1): {
+            switch(e: Expr){
+                Int(v2):{
+                    CheckResult(v1 == v2, context); 
+                }
+                default: CheckResult(false, context);
+            }
+        }
+        
+        Neg(v1): {
+            switch(e: Expr){
+                Neg(v2): check_coincidences(v1, v2, context);
+                default: CheckResult(false, context);
+            } 
+        }
+    }
+}
+
+get_variants(rules: [MyRule], e: ExpFraction){
+    fold(rules, [], \acc, rule -> {
+        chc_n = check_coincidences(rule.before.numerator, e.numerator, makeTree());
+        chc_d = check_coincidences(rule.before.denominator, e.denominator, chc_n.context);
+        if (chc_n.result && chc_d.result) arrayPush(acc, RuleWithContext(rule, chc_d.context)) else acc;
+    });
+}
+
+get_minimal_variant(variants: [RuleWithContext]){
+    fold(variants, variants[0], \acc, x -> if (x.rule.weight < acc.rule.weight) x else acc);
+ 
+}
+
+chnage_cntxt_exp(e: Expr, context: Tree){
+    switch(e){
+        BinaryExpr(l, r, op): BinaryExpr(chnage_cntxt_exp(l, context), chnage_cntxt_exp(r, context), op);
+        Var(name): {
+            lookupTreeDef(context, name, Var("?"));
+        }
+        Neg(v): Neg(chnage_cntxt_exp(v, context));
+        Int(v): Int(v);
+    }
+}
+
+transform_subFrac(e: ExpFraction, rules: [MyRule]){
+    variants = get_variants(rules, e);
+    if (length(variants) == 0){
+        e;
+    } else {
+        min_v = get_minimal_variant(variants);
+        ExpFraction(chnage_cntxt_exp(min_v.rule.after.numerator, min_v.context), chnage_cntxt_exp(min_v.rule.after.denominator, min_v.context));
+    }
+}
+
+transform_Frac(e: ExpFraction, rules: [MyRule]){
+    switch(e.numerator: Expr){
+        BinaryExpr(l, r, op):{
+            switch(op){
+                AddOp(): rat_sum(
+                    transform_subFrac(transform_Frac(ExpFraction(l, e.denominator), rules), rules), 
+                    transform_subFrac(transform_Frac(ExpFraction(r, e.denominator), rules), rules));
+                SubOp(): rat_sub(
+                    transform_subFrac(transform_Frac(ExpFraction(l, e.denominator), rules), rules), 
+                    transform_subFrac(transform_Frac(ExpFraction(r, e.denominator), rules), rules));
+                MulOp(): {
+                    l_tr = transform_subFrac(transform_Frac(ExpFraction(l, e.denominator), rules), rules);
+                    r_tr = transform_subFrac(transform_Frac(ExpFraction(r, l_tr.denominator), rules), rules);
+                    ExpFraction(BinaryExpr(l_tr.numerator, r_tr.numerator, MulOp()), r_tr.denominator);
+                }
+            }
+        }
+        Neg(v): transform_subFrac(transform_Frac(ExpFraction(v, e.denominator), rules), rules);
+        default: e;
+        
+    }
+}
+
+transform_subExpr(e: Expr, rules: [MyRule]){
+    switch(e: Expr){
+        BinaryExpr(l, r, op): {
+            l_tr = transform_subFrac(transform_subExpr(l, rules), rules);
+            r_tr = transform_subFrac(transform_subExpr(r, rules), rules);
+            transform_subFrac(ExpFraction(BinaryExpr(l_tr.numerator, r_tr.numerator, op), Int(1)), rules);
+        }
+        Neg(v): transform_subFrac(transform_subExpr(v, rules), rules);
+        default: ExpFraction(e, Int(1));
+    }
+}
+
+transform_Expr(e: Expr, rules: [MyRule], current_weight: int) -> Expr{
+    new_expr = transform_subExpr(e, rules).numerator;
+    new_weight = weight_Expr(new_expr);
+    if (new_weight < current_weight){
+        transform_Expr(new_expr, rules, new_weight);
+    } else{
+        e;
+    }
+}
+
+transform_AlgFrac(e: ExpFraction, rules: [MyRule], current_weight: int){
+    new_expr = transform_Frac(ExpFraction(transform_Expr(e.numerator, rules, weight_Expr(e.numerator)), transform_Expr(e.denominator, rules, weight_Expr(e.denominator))), rules);
+    new_weight = weight_ExpFraction(new_expr);
+    if (current_weight > new_weight){
+        transform_AlgFrac(new_expr, rules, new_weight);
+    } else {
+        e;
+    }
+}
+
+
+
+e2s(e: Expr){
+	switch (e){
+		Int(v): i2s(v);
+		Var(name): name;
+		Neg(v): strGlue(["-", e2s(v)], "");
+		BinaryExpr(v1, v2, op):
+			switch(op){
+				AddOp(): strGlue(["(", e2s(v1), " + ", e2s(v2), ")"], "");
+				MulOp(): strGlue([e2s(v1), " * ", e2s(v2)], "");
+				SubOp(): strGlue(["(", e2s(v1), " - ", e2s(v2), ")"], "");
+			}
+		
+	}
+}
+
+get_str(e: ExpFraction){
+	v1 = e2s(e.numerator);
+	
+    if (e.denominator != Int(1)){
+        v2 = e2s(e.denominator);
+        strGlue([v1, "\n", strRepeat("-", max(strlen(v1), strlen(v2))), "\n", e2s(e.denominator)], "");
+    } else {
+        v1;
+    }
+	
+}
+
+rat_sum(l: ExpFraction, r: ExpFraction) {
+	ExpFraction(
+        calc_add(
+            calc_mul(l.numerator,  r.denominator), 
+            calc_mul(r.numerator, l.denominator)), 
+        calc_mul(l.denominator, r.denominator)
+    );
+}
+
+rat_mul(l: ExpFraction, r: ExpFraction) {
+	ExpFraction(calc_mul(l.numerator, r.numerator), calc_mul(l.denominator, r.denominator));
+}
+
+rat_sub(l: ExpFraction, r: ExpFraction) {
+	ExpFraction(
+        calc_sub(
+            calc_mul(l.numerator,  r.denominator), 
+            calc_mul(r.numerator, l.denominator)), 
+        calc_mul(l.denominator, r.denominator)
+    );
+}
+
+calc_sub(e1: Expr, e2: Expr){
+
+    if (e1 == e2){
+        Int(0);
+    } else if (e1 == Int(0)){
+        Neg(e2);
+    } else if (e2 == Int(0)){
+        e1;
+    } else {
+        BinaryExpr(e1, e2, SubOp());
+    }
+}
+
+calc_mul(e1: Expr, e2: Expr){
+    if ((e1 == Int(0)) || (e2 == Int(0))){
+        Int(0);
+    } else if (e1 == Int(1)){
+        e2;
+    } else if (e2 == Int(1)){
+        e1;
+    } else {
+        BinaryExpr(e1, e2, MulOp());
+    }
+}
+
+calc_add(e1, e2){
+    if ((e1 == Int(0)) && (e2 == Int(0))){
+        Int(0);
+    } else if (e1 == Int(0)){
+        e2;
+    } else if (e2 == Int(0)){
+        e1;
+    }    else {
+        BinaryExpr(e1, e2, AddOp());
+    }
+}
+buildSub(xs: [flow]){
+    fold(xs[1], xs[0], \acc, x -> {
+		ExpFraction(calc_sub(calc_mul(x.numerator, acc.denominator), calc_mul(acc.numerator,x.denominator)), 
+					calc_mul(acc.denominator, x.denominator));
+	});
+}
+
+buildMul(xs: [flow]){
+	fold(xs[1], xs[0], \acc,x -> ExpFraction(calc_mul(acc.numerator, x.numerator), 
+				calc_mul(acc.denominator, x.denominator)));
+}
+
+buildDiv(xs: [flow]){
+    fold(xs[1], xs[0], \acc, x -> ExpFraction(calc_mul(acc.numerator, x.denominator), 
+											calc_mul(acc.denominator, x.numerator)));
+}
+
+buildAdd(xs: [flow]){
+	fold(xs[1], xs[0], \acc, x ->ExpFraction(calc_add(calc_mul(acc.numerator, x.denominator), calc_mul(x.numerator, acc.denominator)), 
+				calc_mul(acc.denominator, acc.denominator)));
+}
+
+bildExpFrac(xs: [flow]){
+	ExpFraction(xs[0], xs[1]);
+}
+
+specialPegActions = {
+		t = setTree(
+					setTree(
+						setTree(
+							setTree(defaultPegActions.t, "buildSub", buildSub), 
+						"buildAdd", buildAdd), 
+					"buildMul", buildMul),
+				"buildDiv", buildDiv);
+		SemanticActions(t);
+}
+
+lingoGrammarOp : ref Maybe<[PegOp]> = ref None();
+
+lingoGrammar() {
+	onlyOnce(lingoGrammarOp, \ -> {
+		compilePegGrammar("#include arithmetic.lingo");
+	});
+}
+
+tests = ["x*y + x*y", "x*y + z*x", "(x*y + x*y)*(x+x)/x", "y*x*x/x", "x + 1 + 1 + x"];
+
+rules = ["x + x=2*x", "x+y=y+x", "a*b+a*c=a*(b+c)", "a*b/a=b", "(x+y)+z=(y+z)+x"];
+
+
+main(){
+    vars: [Pair<string, int>] = [Pair("x", 10), Pair("y", 20)];
+    rulesExp = generate_commutative_rules(map(rules, \str_rule -> {
+        before =  parsic(lingoGrammar(), takeBeforeLast(str_rule, "=", ""), specialPegActions);
+        after = parsic(lingoGrammar(), takeAfter(str_rule, "=", ""), specialPegActions);
+        MyRule(before, after, weight_ExpFraction(after));
+    }
+        
+    ));
+	tree_vars = fold(vars, makeTree(), \tree, p -> setTree(tree, p.first, Fraction(p.second, 1)));
+	map(tests, \test -> {
+		println("test:");
+		println(test);
+		result = parsic(lingoGrammar(), test, specialPegActions);
+        println(get_str(transform_AlgFrac(result, rulesExp, weight_ExpFraction(result))));
+        println("");
+	});
+    quit(0);
+}

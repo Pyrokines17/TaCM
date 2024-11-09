@@ -1,0 +1,13 @@
+// import ds/array;
+// import runtime;
+import string;
+
+main () { 
+    numbers = [1, 2, 3];
+    println(numbers);
+
+    arrStrings = map(numbers, i2s);
+    println(arrStrings);
+    
+    quit(0);
+};

@@ -1,0 +1,223 @@
+import lingo/pegcode/driver;
+import math/math;
+import ds/tree;
+import string;
+
+Expr ::= Int, Sum, Sub, Mul, Div, Var, Neg;
+
+Int(value : int);
+Sum(l : Expr, r : Expr);
+Sub(l : Expr, r : Expr);
+Mul(l : Expr, r : Expr);
+Div(l : Expr, r : Expr);
+Var(name : string);
+Neg(e : Expr);
+
+buildSub(xs : [flow]) {
+	fold(xs[1], xs[0], \acc, x -> Sub(acc, x))
+}
+
+buildDiv(xs : [flow]) {
+	fold(xs[1], xs[0], \acc, x -> Div(acc, x))
+}
+
+simply(p : Pair<int, int>) -> Pair<int, int> {
+	a = gcd(p.first, p.second);
+	Pair(p.first / a, p.second / a);
+}
+
+calculate(expr : Expr, vars : Tree<string, Pair<int, int>>) -> Pair<int, int> {
+	switch (expr : Expr) {
+		Sum(l, r): {
+			a = calculate(l, vars); b = calculate(r, vars);
+			temp = Pair(a.first * b.second + b.first * a.second, a.second * b.second);
+			simply(temp);
+		}
+		Sub(l, r): {
+			a = calculate(l, vars); b = calculate(r, vars);
+			temp = Pair(a.first * b.second - b.first * a.second, a.second * b.second);
+			simply(temp);
+		}
+		Mul(l, r): {
+			a = calculate(l, vars); b = calculate(r, vars);
+			temp = Pair(a.first * b.first, a.second * b.second);
+			simply(temp);
+		}
+		Div(l, r): {
+			a = calculate(l, vars); b = calculate(r, vars);
+			temp = Pair(a.first * b.second, a.second * b.first);
+			simply(temp);
+		}
+		Var(name): {
+			assert(containsKeyTree(vars, name), strGlue([name, "-not found"], ""));
+			either(lookupTree(vars, name), Pair(1, 1));
+		}
+		Neg(e): {
+			a = calculate(e, vars);
+			Pair(-a.first, a.second);
+		}
+		Int(value): {
+			Pair(value, 1);
+		}
+	}
+}
+
+myToString(expr: Expr) -> string {
+	switch (expr : Expr) {
+		Sum(l, r): {
+			temp = strGlue([myToString(l), myToString(r)], "+");
+			strGlue(["(", temp, ")"], "");
+		}
+		Sub(l, r): {
+			temp = strGlue([myToString(l), myToString(r)], "-");
+			strGlue(["(", temp, ")"], "");
+		}
+		Mul(l, r): {
+			temp = strGlue([myToString(l), myToString(r)], "*");
+			strGlue(["(", temp, ")"], "");
+		}
+		Div(l, r): {
+			temp = strGlue([myToString(l), myToString(r)], "/");
+			strGlue(["(", temp, ")"], "");
+		}
+		Var(name): {
+			name;
+		}
+		Neg(e): {
+			strGlue(["(-", myToString(e), ")"], "");
+		}
+		Int(value): {
+			i2s(value);
+		}
+	}
+}
+
+simSum(a: Expr, b: Expr) -> Expr {
+    if (a == Int(0) || a == Neg(Int(0))) {
+        b;
+    } else if (b == Int(0) || b == Neg(Int(0))) {
+        a;
+    } else {
+        Sum(a, b);
+    }
+}
+
+simSub(a: Expr, b: Expr) -> Expr {
+    if (a == Int(0) || a == Neg(Int(0))) {
+        Neg(b);
+    } else if (b == Int(0) || b == Neg(Int(0))) {
+        a;
+    } else {
+        Sub(a, b);
+    }
+}
+
+simMul(a: Expr, b: Expr) -> Expr {
+    if (a == Int(0) || b == Int(0) || a == Neg(Int(0)) || b == Neg(Int(0))) {
+        Int(0);
+    } else if (a == Int(1)) {
+        b;
+    } else if (b == Int(1)) {
+        a;
+    } else {
+        Mul(a, b);
+    }
+}
+
+simDiv(a: Expr, b: Expr) -> Expr {
+    if (a == Int(0) || a == Neg(Int(0))) {
+        Int(0);
+    } else if (b == Int(1)) {
+        a;
+    } else {
+        Div(a, b);
+    }
+}
+
+derivative(expr : Expr, trig : string) -> Expr {
+    switch (expr : Expr) {
+        Sum(l, r): {
+            simSum(derivative(l, trig), derivative(r, trig));
+		}
+		Sub(l, r): {
+            simSub(derivative(l, trig), derivative(r, trig));
+		}
+		Mul(l, r): {
+            simSum(simMul(derivative(l, trig), r), simMul(l, derivative(r, trig)));
+		}
+		Div(l, r): {
+            num = simSub(simMul(derivative(l, trig), r), simMul(l, derivative(r, trig)));
+            simDiv(num, simMul(r, r));
+		}
+		Var(name): {
+            if (name == trig) {
+                Int(1);
+            } else {
+                Int(0);
+            }
+		}
+		Neg(e): {
+            Neg(derivative(e, trig));
+		}
+		Int(value): {
+            Int(0);
+		}
+    }
+}
+
+lingoGrammarOp : ref Maybe<[PegOp]> = ref None();
+
+lingoGrammar() {
+	onlyOnce(lingoGrammarOp, \ -> {
+		compilePegGrammar("#include grammar.lingo");
+	});
+}
+
+specialPegActions = {
+	t = setTree(defaultPegActions.t, "buildSub", buildSub);
+	SemanticActions(t);
+}
+
+specialPegActions1 = {
+	t = setTree(specialPegActions.t, "buildDiv", buildDiv);
+	SemanticActions(t);
+}
+
+main() {
+	tree = makeTree();
+
+	vars = setTree(tree, "a", Pair(5, 1));
+    vars1 = setTree(vars, "x", Pair(2, 1));
+
+	result = parsic(lingoGrammar(), "(x*x)*(x*x)", specialPegActions1);
+    println("Result of parsic: "); println(result); println("");
+
+	resInt = calculate(result, vars1);
+	stringView = myToString(result);
+
+	if (resInt.second == 1) {
+		stringRes = i2s(resInt.first);
+		println(strGlue(["Result of calculate: ", stringView, " = ", stringRes], ""));
+	} else {
+		stringRes = strGlue([i2s(resInt.first), "/", i2s(resInt.second)], "");
+		println(strGlue(["Result of calculate: ", stringView, " = ", stringRes], ""));
+	}
+
+    println("");
+
+    result1 = derivative(result, "x");
+    println("Result of derParsic:"); println(result1); println("");
+
+    resInt1 = calculate(result1, vars1);
+    stringView1 = myToString(result1);
+
+    if (resInt1.second == 1) {
+        stringRes1 = i2s(resInt1.first);
+        println(strGlue(["Result of derivative: ", stringView1, " = ", stringRes1], ""));
+    } else {
+        stringRes1 = strGlue([i2s(resInt1.first), "/", i2s(resInt1.second)], "");
+        println(strGlue(["Result of derivative: ", stringView1, " = ", stringRes1], ""));
+    }
+    
+	quit(0);
+}

@@ -1,0 +1,16 @@
+expr = ws var:a equal intOrRac:b ws expr:c {Triple(:a, :b, :c)} | ws {Int(0)};  
+
+intOrRac = rac | int;
+
+equal = ws '=' ws;
+
+var = alpha+$a {$a};
+alpha = 'a'-'z' | 'A'-'Z' | '_';
+
+rac = digit+$a"/"digit+$b {Pair(s2i($a), s2i($b))};
+
+int = digit+$i {Pair(s2i($i), 1)};
+digit = '0'-'9';
+
+ws = s*;
+s = ' ' | '\t' | '\n';

@@ -1,0 +1,25 @@
+import runtime;
+import ds/array;
+
+fib(n: int) -> [int] {
+    assert(n >= 1, "Error: not positive");
+
+    if (n == 1) {
+        [0];
+    } else if (n == 2) {
+        [0, 1];
+    } else {
+        prev = fib(n-1);
+
+        concat(prev, [prev[n-2]+prev[n-3]]);
+    }
+}
+
+main() {
+    number = 7;
+
+    println(number);
+    println(fib(number));
+
+    quit(0);
+}

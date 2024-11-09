@@ -1,0 +1,152 @@
+import lingo/pegcode/driver;
+
+import runtime;
+import ds/tree;
+import ds/array;
+import string;
+
+Expr ::= Int, Sum, Mul;
+Expr_RPN ::= Int, Op;
+Op(op: string);
+Int(val: int);
+Sum(a: Expr, b: Expr);
+Mul(a: Expr, b: Expr);
+
+get_ops(a: Expr, b: Expr, op: string) {
+    if (op == "*") {
+        Mul(a, b); 
+    } else { 
+        Sum(a, b); 
+    }
+}
+
+do_ops(a: int, b: int, op: string) -> int {
+    if (op == "*") {
+        a * b; 
+    } else {
+        a + b; 
+    }
+}
+
+Expr_to_RPN(exp: Expr) {
+    switch (exp : Expr) {
+		Sum(a, b): {
+			strGlue([Expr_to_RPN(a), " ", Expr_to_RPN(b), " +"], "");
+		}
+		Mul(a, b): {
+			strGlue([Expr_to_RPN(a), " ", Expr_to_RPN(b), " *"], "");
+		}
+		Int(val): {
+			i2s(val);
+		}
+	}
+}
+
+RPN_to_Expr(rpn: string) {
+    rpn_arr: [string] = fold(strSplit(rpn, " "), [], \x, y -> if (y == "") concat(x, []) else concat(x, [y]));
+
+    res = fold(rpn_arr, ref [], \x, y -> {
+        if ((y == "*") || (y == "+")) {
+            l: int = length(^x);
+            a = ^x[l - 2];
+            b = ^x[l - 1];
+            x := subrange(^x, 0, l-2);
+            refArrayPush(x,  get_ops(a, b, y));
+            x;
+        } else {
+            refArrayPush(x, Int(s2i(y)));   
+            x;
+        }
+    });
+
+    ^res[0];
+}
+
+calc_RPN(rpn: string) -> int {
+    rpn_arr: [string] = fold(strSplit(rpn, " "), [], \x, y -> if (y == "") concat(x, []) else concat(x, [y]));
+    
+    res = fold(rpn_arr, ref [], \x, y -> {
+        if ((y == "*") || (y == "+")) {
+            l: int = length(^x);
+            a = ^x[l - 2];
+            b = ^x[l - 1];
+            x := subrange(^x, 0, l-2);
+            refArrayPush(x,  do_ops(a, b, y));
+            x;
+        } else {
+            refArrayPush(x, s2i(y));
+            x;
+        }
+    });
+    
+    ^res[0];
+}
+
+calc_exp(exp: Expr) {
+	switch (exp : Expr) {
+		Sum(a, b): {
+			calc_exp(a) + calc_exp(b);
+		}
+		Mul(a, b): {
+			calc_exp(a) * calc_exp(b);
+		}
+		Int(val): {
+			val;
+		}
+	}
+}
+
+buildExpr(xs : [flow]) {
+    res = foldi(xs[0], ref [], \i, acc, x -> {
+
+        switch (x: Expr_RPN) {
+            Op(op): {
+                l: int = length(^acc);
+                a = ^acc[l - 2];
+                b = ^acc[l - 1];
+                acc := subrange(^acc, 0, l-2);
+                refArrayPush(acc,  get_ops(a, b, x.op));
+                acc;
+            }
+            Int(val) : {
+                refArrayPush(acc, x);
+                acc;
+            }
+        }
+    });
+
+    ^res[0];
+}
+
+specialPegActions = {
+	t = setTree(defaultPegActions.t, "buildExpr", buildExpr);
+	SemanticActions(t);
+}
+
+lingoGrammarOp : ref Maybe<[PegOp]> = ref None();
+
+lingoGrammar() {
+	onlyOnce(lingoGrammarOp, \ -> {
+		compilePegGrammar("#include grammar.lingo");
+	});
+}
+
+main() {
+    println("Lingo result: ");
+	result = parsic(lingoGrammar(), "5 10 +", specialPegActions);
+    println(result);
+
+    println("To RPN result: ");
+    rpn = Expr_to_RPN(result);
+    println(rpn);
+    println("Calc RPN result: ");
+    println(calc_RPN(rpn));
+
+    println("From RPN result: ");
+    res = RPN_to_Expr(rpn);
+    println(res);
+    println("Calc result: ");
+    println(calc_exp(res));
+
+    quit(0);
+}

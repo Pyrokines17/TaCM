@@ -1,0 +1,23 @@
+import runtime;
+import ds/array;
+
+helper(a: int, b: int, count: int, tempRes: [int]) -> [int] {
+        if (count == 0) {
+            tempRes;
+        } else {
+            helper(b, a+b, count-1, concat(tempRes, [a]));
+        }
+    }
+
+fib(n: int) -> [int] {
+    helper(0, 1, n, []);
+}
+
+main() {
+    number = 0;
+
+    println(number);
+    println(fib(number));
+
+    quit(0);
+}

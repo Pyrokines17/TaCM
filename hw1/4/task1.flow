@@ -1,0 +1,21 @@
+import runtime;
+import ds/array;
+import ds/tuples;
+
+inds(a: [int], m: int) -> [Pair<int, int>] {
+    foldi(a, [], \i, x, y -> concat(x, foldi(a, [], \j, z, v -> if (y+v == m) {
+        concat(z, [Pair(i, j)]);
+    } else {
+        concat(z, []);
+    })));
+}
+
+main() {
+    input = [1, 0, 0, 0];
+    target = 1;
+
+    println(input);
+    println(inds(input, target));
+
+    quit(0);
+}

@@ -1,0 +1,9 @@
+expr = term1:a plus expr:b {Sum(:a, :b)} | term1;
+term1 = term2:a mul term1:b {Mul(:a, :b)} | term2;
+term2 = fin_int | '(' expr:e ')' { :e };
+fin_int = int$i { Int(s2i($i)) };
+int = digit+ | '-' digit+;
+digit = '0'-'9';
+plus = ws* '+' ws*;
+mul = ws* '*' ws*;
+ws = ' ';

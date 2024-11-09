@@ -1,0 +1,22 @@
+E = T0:e1 (plus T0)+:e2 {buildAdd(:e1, :e2)} | T0;
+T0 = T1:e1 (sub T1)+:e2 {buildSub(:e1, :e2)} | T1;
+T1 = T2:e1 (mul T2)+:e2 {buildMul(:e1, :e2)} | T2;
+T2 = T3:e1 (div T3)+:e2 {buildDiv(:e1, :e2)}  | T3;
+T3 = "(-"T4:e1")" {FractionExp(Neg(:e1), Int(1))} |  T4;
+T4 = operand | "("E:e1")" {:e1} | E;
+operand = var | int;
+
+int =  digit+$d {ExpFraction(Int(s2i($d)), Int(1))};
+
+var = var_name$d {ExpFraction(Var($d), Int(1))};
+var_name = (letter | uc)+ (letter | uc | digit)*;
+letter = 'A' - 'z';
+uc = "_";
+
+
+digit = '0' - '9';
+plus = ws "+" ws;
+sub = ws "-" ws;
+mul = ws "*" ws;
+div = ws "/" ws;
+ws = (" "|'\n'|'\r')*;

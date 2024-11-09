@@ -1,0 +1,29 @@
+import runtime;
+import ds/array;
+import ds/tuples;
+import ds/tree;
+import maybe;
+
+inds(a: [int], m: int) -> [Pair<int, int>] {
+    tree = foldi(a, makeTree(), \i, x, y -> setTree(x, y, i));
+
+    foldi(a, [], \i, x, y -> {
+        id = either(lookupTree(tree, m-y), -1);
+
+        if (id >= 0) {
+            concat(x, [Pair(i, id)]);
+        } else {
+            concat(x, []);
+        }
+    });
+}
+
+main() {
+    input = [1, 2, 3, 4, 5];
+    target = 5;
+
+    println(input);
+    println(inds(input, target));
+
+    quit(0);
+}

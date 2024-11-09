@@ -1,0 +1,29 @@
+import runtime;
+import ds/array;
+
+helper(a:[int], i:int, n:int) -> [int] {
+    if (i > n) {
+        a;
+    } else {
+        b : ref [int] = ref a;
+        refArrayPush(b, a[i-2]+a[i-3]);
+        helper(^b, i+1, n);
+    }
+}
+
+fib(n: int) -> [int] {
+    if (n == 1) {
+        [0];
+    } else {
+        helper([0, 1], 3, n);
+    }
+}
+
+main() {
+    number = 7;
+
+    println(number);
+    println(fib(number));
+
+    quit(0);
+}

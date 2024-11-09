@@ -1,0 +1,51 @@
+import lingo/pegcode/driver;
+import string;
+
+Expr ::= Int, Sum, Mul;
+Int(value : int);
+Sum(l : Expr, r : Expr);
+Mul(l : Expr, r : Expr);
+
+calculate(expr : Expr) -> int {
+	switch (expr : Expr) {
+		Sum(l, r): {
+			calculate(l) + calculate(r);
+		}
+		Mul(l, r): {
+			calculate(l) * calculate(r);
+		}
+		Int(value): {
+			value;
+		}
+	}
+}
+
+myToString(expr: Expr) -> string {
+	switch (expr : Expr) {
+		Sum(l, r): {
+			strGlue([myToString(l), myToString(r)], "+");
+		}
+		Mul(l, r): {
+			strGlue([myToString(l), myToString(r)], "*");
+		}
+		Int(value): {
+			i2s(value);
+		}
+	}
+}
+
+lingoGrammarOp : ref Maybe<[PegOp]> = ref None();
+
+lingoGrammar() {
+	onlyOnce(lingoGrammarOp, \ -> {
+		compilePegGrammar("#include grammar.lingo");
+	});
+}
+
+main() {
+	result = parsic(lingoGrammar(), "-5 + 10", defaultPegActions);
+    println(result);
+	println(calculate(result));
+	println(myToString(result));
+    quit(0);
+}

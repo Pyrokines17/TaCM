@@ -1,0 +1,9 @@
+expr = term+:e { buildExpr(:e) };
+term = ws* fin_int:e ws* {:e}| ws* ops$d ws* { Op($d) };
+fin_int = int$d { Int(s2i($d)) };
+int = digit+ | "-"digit+;
+digit = '0' - '9';
+ops = add | mul;
+add = "+";
+mul = "*";
+ws = " ";

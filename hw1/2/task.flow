@@ -1,0 +1,10 @@
+import ds/array;
+import runtime;
+
+main() {
+    numbers = [1, 2, 3];
+    println(numbers);
+
+    println(fold(numbers, 0, \x,y -> x+y));
+    quit(0);
+}

@@ -1,0 +1,169 @@
+import lingo/pegcode/driver;
+import sys/system;
+import math/math;
+import ds/tree;
+import string;
+
+Expr ::= Int, Sum, Sub, Mul, Div, Var, Neg;
+Expr1 ::= Int, Triple;
+
+Int(value : int);
+Sum(l : Expr, r : Expr);
+Sub(l : Expr, r : Expr);
+Mul(l : Expr, r : Expr);
+Div(l : Expr, r : Expr);
+Var(name : string);
+Neg(e : Expr);
+
+buildSub(xs : [flow]) {
+	fold(xs[1], xs[0], \acc, x -> Sub(acc, x))
+}
+
+buildDiv(xs : [flow]) {
+	fold(xs[1], xs[0], \acc, x -> Div(acc, x))
+}
+
+simply(p : Pair<int, int>) -> Pair<int, int> {
+	a = gcd(p.first, p.second);
+	Pair(p.first / a, p.second / a);
+}
+
+calculate(expr : Expr, vars : Tree<string, Pair<int, int>>) -> Pair<int, int> {
+	switch (expr : Expr) {
+		Sum(l, r): {
+			a = calculate(l, vars);
+			b = calculate(r, vars);
+			temp = Pair(a.first * b.second + b.first * a.second, a.second * b.second);
+			simply(temp);
+		}
+		Sub(l, r): {
+			a = calculate(l, vars);
+			b = calculate(r, vars);
+			temp = Pair(a.first * b.second - b.first * a.second, a.second * b.second);
+			simply(temp);
+		}
+		Mul(l, r): {
+			a = calculate(l, vars);
+			b = calculate(r, vars);
+			temp = Pair(a.first * b.first, a.second * b.second);
+			simply(temp);
+		}
+		Div(l, r): {
+			a = calculate(l, vars);
+			b = calculate(r, vars);
+			temp = Pair(a.first * b.second, a.second * b.first);
+			simply(temp);
+		}
+		Var(name): {
+			assert(containsKeyTree(vars, name), strGlue([name, "-not found"], ""));
+			temp = either(lookupTree(vars, name), Pair(1, 1));
+			simply(temp)
+		}
+		Neg(e): {
+			a = calculate(e, vars);
+			Pair(-a.first, a.second);
+		}
+		Int(value): {
+			Pair(value, 1);
+		}
+	}
+}
+
+myToString(expr: Expr) -> string {
+	switch (expr : Expr) {
+		Sum(l, r): {
+			temp = strGlue([myToString(l), myToString(r)], "+");
+			strGlue(["(", temp, ")"], "");
+		}
+		Sub(l, r): {
+			temp = strGlue([myToString(l), myToString(r)], "-");
+			strGlue(["(", temp, ")"], "");
+		}
+		Mul(l, r): {
+			temp = strGlue([myToString(l), myToString(r)], "*");
+			strGlue(["(", temp, ")"], "");
+		}
+		Div(l, r): {
+			temp = strGlue([myToString(l), myToString(r)], "/");
+			strGlue(["(", temp, ")"], "");
+		}
+		Var(name): {
+			name;
+		}
+		Neg(e): {
+			strGlue(["(-", myToString(e), ")"], "");
+		}
+		Int(value): {
+			i2s(value);
+		}
+	}
+}
+
+initTree(expr : Expr1, tree : Tree<string, Pair<int, int>>) -> Tree<string, Pair<int, int>> {
+	switch (expr : Expr1) {
+		Triple(name, value, next): {
+			temp = setTree(tree, name, value);
+			initTree(next, temp);
+		}
+		Int(value): {
+			tree;
+		}
+	}
+}
+
+lingoGrammarOp : ref Maybe<[PegOp]> = ref None();
+
+lingoGrammar() {
+	//onlyOnce(lingoGrammarOp, \ -> {
+	//	compilePegGrammar("#include grammar.lingo");
+	//});
+
+	compilePegGrammar("#include grammar.lingo");
+}
+
+lingoGrammar1() {
+	//onlyOnce(lingoGrammarOp, \ -> {
+	//	compilePegGrammar("#include variables.lingo");
+	//});
+
+	compilePegGrammar("#include variables.lingo");
+}
+
+specialPegActions = {
+	t = setTree(defaultPegActions.t, "buildSub", buildSub);
+	SemanticActions(t);
+}
+
+specialPegActions1 = {
+	t = setTree(specialPegActions.t, "buildDiv", buildDiv);
+	SemanticActions(t);
+}
+
+main() {
+	tree = makeTree();
+
+	println("Enter the variables: ");
+	varInput = readUntil("\n");
+
+	vars = parsic(lingoGrammar1(), varInput, specialPegActions1);
+	varsTree = initTree(vars, tree);
+
+	println("Enter the expression: ");
+	exprInput = readUntil("\n");
+
+	result = parsic(lingoGrammar(), exprInput, specialPegActions1);
+	println("Result of parsic: "); println(result); println("");
+
+	resInt = calculate(result, varsTree);
+	stringView = myToString(result);
+
+	if (resInt.second == 1) {
+		stringRes = i2s(resInt.first);
+		println(strGlue(["Result of calc: ", stringView, " = ", stringRes], ""));
+	} else {
+		stringRes = strGlue([i2s(resInt.first), "/", i2s(resInt.second)], "");
+		println(strGlue(["Result of calc: ", stringView, " = ", stringRes], ""));
+	}
+    
+	quit(0);
+}
