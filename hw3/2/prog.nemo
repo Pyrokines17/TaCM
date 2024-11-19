@@ -1,0 +1,66 @@
+VAR n: INT; VAR x: INT; VAR y: INT; VAR q: INT; VAR f: INT; VAR qwe: BOOL; 
+VAR zx : [INT]; VAR qw : [[INT]]; VAR we : [[INT]]; VAR wa : [INT];
+VAR z1 : BOOL; VAR z2 : BOOL; VAR z3 : BOOL; VAR z4 : BOOL; VAR z5 : BOOL;
+
+{
+    {
+        x := 0;
+
+        y := x + 1;
+        q := -y;
+
+        qwe := true;
+
+        x := 5;
+        q := 0;
+
+        {
+            (q <= x)?;
+            q := q + 1;
+        }*;
+    } 
+
+    U
+
+    {
+        {
+            n := 1 + 5;
+
+            y := n;
+
+            x := 0 + n;
+            n := 6 - n;
+            y := n * 10;
+            n := y / 5;
+
+            zx := [];
+            qw := [];
+            we := [[3, 5], []];
+
+            wa := UPD(zx, 0, 1);
+            f := APP(wa, 0);
+        }
+        
+        U
+
+        {
+            {
+                x := 0;
+                y := 1;
+                
+                z1 := x < y;
+                z2 := x <= y;
+                z3 := x > y;
+                z4 := x >= y;
+                
+                z5 := !(true);
+            }
+
+            U
+
+            {
+
+            };
+        };
+    };
+};

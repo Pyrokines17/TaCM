@@ -1,0 +1,892 @@
+import lingo/pegcode/driver;
+import algorithms;
+import sys/system;
+import ds/tree;
+import string;
+
+Success : ();
+
+RedeclarationError : (varName : string);
+InvalidTypeError : (e : Expr);
+
+AssignmentToUndeclaredVarError : (varName : string);
+AssignmentTypesMismatchError : (a : Assignment);
+
+AnalysisResult ::= Success, RedeclarationError, InvalidTypeError, AssignmentToUndeclaredVarError, AssignmentTypesMismatchError;
+ 
+Int : ();
+String : ();
+Bool : ();
+Real : ();
+NoType : ();
+AnyType : ();
+
+Array : (baseType : ExprType);
+
+VarType ::= Int, String, Bool, Real, Array;
+ExprType ::= VarType, NoType, AnyType;
+
+VarDecl : (name : string, type : VarType);
+VarDeclList : (elements : [VarDecl]);
+Var : (name : string);
+
+IntConst : (value: int);
+StringConst : (value : string);
+BoolConst : (value : bool);
+RealConst : (value : double);
+ArrayConst : (values : Tree<int, Const>); 
+NonBoolConst ::= IntConst, StringConst, RealConst, ArrayConst;
+
+Const ::= NonBoolConst, BoolConst;
+
+ArithmAddOp : ();
+ArithmSubOp : ();
+ArithmMulOp : ();
+ArithmDivOp : ();
+
+ArithmBinaryOp ::= ArithmAddOp, ArithmSubOp, ArithmMulOp, ArithmDivOp;
+
+ArithmBinary : (l : Expr, r : Expr, op : ArithmBinaryOp);
+ArithmNeg : (e : Expr);
+
+ArithmExpr ::= ArithmBinary, ArithmNeg;
+
+Equal : ();
+Less : ();
+
+ComparisonType ::= Equal, Less;
+
+Comparison : (l : Expr, r : Expr, comparisonType : ComparisonType);
+Not : (e : BooleanExpr);
+Or : (l : BooleanExpr, r : BooleanExpr);
+
+BooleanExpr ::= Comparison, Not, Or, BoolConst;
+
+ArrayUpdateOpType : (ind : Expr, val : Expr);
+ArrayApplyOpType : (ind : Expr);
+ArrayConcatOpType : (arr2 : Expr);
+ArrayLengthOpType : ();
+
+ArrayOpType ::= ArrayUpdateOpType, ArrayApplyOpType, ArrayConcatOpType, ArrayLengthOpType;
+
+ArrayOp : (arr : Expr, opType : ArrayOpType);
+
+Expr ::= Var, Const, ArithmExpr, ArrayOp, BooleanExpr;
+
+Assignment : (varName : string, expr : Expr);
+BodiesSeq : (bodies : [Body]);
+Test : (be : BooleanExpr);
+Print : (e : Expr);
+UDChoice : (bodies : [Body]);
+UDIteration : (body : Body);
+
+Body ::= Assignment, BodiesSeq, Test, UDChoice, UDIteration, Print;
+
+NemoProgram : (varDeclList : VarDeclList, body : Body);
+
+AssignmentOperation : (varName : string, expr : Expr, labels : [int]);
+TestOperation : (cond : BooleanExpr, ifLabels : [int], elseLabels : [int]);
+PrintOperation : (expr : Expr, labels : [int]);
+
+Operation ::= AssignmentOperation, TestOperation, PrintOperation;
+
+Operator : (label : int, operation : Operation);    
+sortOperators(operators : [Operator]) -> [Operator];
+VMProgram : (varDeclList : VarDeclList, operators : [Operator]); 
+
+sortOperators(operators : [Operator]) -> [Operator] {
+    mergeSort(operators, \o1, o2 -> {
+        l1 = o1.label;
+        l2 = o2.label;
+        l1 - l2;
+    });
+}
+
+labels2s(labels : [int]) -> string {
+    labelsListRepr = foldi(sort(labels), "", \i, acc, e -> {
+            tmp = acc + i2s(e);
+            
+            if (i == length(labels) - 1) {
+                tmp;
+            } else {
+                tmp + ", ";
+            }
+        }
+    );
+    "{" + labelsListRepr + "}";
+}
+
+operation2s(operation : Operation) -> string {
+    switch (operation) {
+        AssignmentOperation(varName, expr, labels) : varName + " := " + expr2s(expr) + " goto " + labels2s(labels);
+        TestOperation(cond, ifLabels, elseLabels) : "if (" + expr2s(cond) + ") then " + labels2s(ifLabels) + " else " + labels2s(elseLabels);
+        PrintOperation(expr, labels) : "print " + expr2s(expr) + " goto " + labels2s(labels);
+    }
+}
+
+operator2s(operator : Operator) -> string {
+    i2s(operator.label) + ": " + operation2s(operator.operation) + ";";    
+}
+
+doRange(len : int, acc : [int], index : int) -> [int] {
+    if (index == len) {
+        acc;
+    } else {
+        doRange(len, arrayPush(acc, index), index + 1);
+    }
+}
+
+range(maxIndex : int) -> [int] {
+    doRange(maxIndex + 1, [], 0);
+}
+
+constTree2s(t : Tree<int, Const>) -> string {
+    switch (popmax(t)) {
+        EmptyPopResult() : "[]";
+        PopResult(resK, resV, rest) : {
+            maxIndex = resK;
+            r = range(maxIndex);
+            l = foldi(
+                range(maxIndex),
+                "",
+                \i, acc, e -> {
+                    curConst = lookupTree(t, e);
+                    curConstRepr = eitherMap(curConst, const2s, "__");
+                    
+                    tmp = acc + curConstRepr;
+
+                    if (i == maxIndex) {
+                        tmp;
+                    } else {
+                        tmp + ", ";
+                    }
+                }
+            );
+            "[" + l + "]";
+        }
+    };
+}
+
+exprType2s(t : ExprType) -> string {
+    switch (t) {
+        Int() : "INT";
+        String() : "STR";
+        Bool() : "BOOL";
+        Real() : "REAL";
+        Array(baseType) : "[" + exprType2s(baseType) + "]";
+        NoType() : "#NO_TYPE#";
+        AnyType() : "#ANY_TYPE#";
+    }
+}
+
+varDecl2s(vd: VarDecl) -> string {
+    "VAR " + vd.name + " : " + exprType2s(vd.type) + ";";
+}
+
+varDeclList2s(vdl : VarDeclList) -> string {
+    fold(vdl.elements, "", \s, d -> {
+        s + varDecl2s(d) + "\n";
+    })
+}
+
+boolConst2s(b : BoolConst) -> string {
+    b2s(b.value);
+}
+
+const2s(c : Const) -> string {
+    switch (c) {
+        IntConst(value) : i2s(value);
+        StringConst(value) : "\"" + value + "\"";
+        BoolConst(value) : boolConst2s(c);
+        RealConst(value) : d2s(value);
+        ArrayConst(values) : constTree2s(values);
+    }
+}
+
+aExpr2s(ae : ArithmExpr) -> string {
+    withoutBrackets = switch (ae) {
+        ArithmBinary(l, r, op) : {
+            ls = expr2s(l);
+            rs = expr2s(r);
+            switch (op) {
+                ArithmAddOp() : ls + " + " + rs;
+                ArithmSubOp() : ls + " - " + rs;
+                ArithmMulOp() : ls + " * " + rs;
+                ArithmDivOp() : ls + " / " + rs;
+            }
+        }
+        ArithmNeg(e) : "-" + expr2s(e);
+    }
+    "(" + withoutBrackets + ")";
+}
+
+arrOp2s(arrayOp : ArrayOp) -> string {
+    arr = arrayOp.arr;
+    arrRepr = expr2s(arr);
+
+    switch (arrayOp.opType) {
+        ArrayUpdateOpType(ind, val) : "UPD(" + arrRepr + ", " + expr2s(ind) + ", " + expr2s(val) + ")";
+        ArrayApplyOpType(ind) : "APP(" + arrRepr + ", " + expr2s(ind) + ")";
+        ArrayConcatOpType(arr2) : "CONCAT(" + arrRepr + ", " + expr2s(arr2) + ")";
+        ArrayLengthOpType() : "LENGTH(" + arrRepr + ")";
+    }
+}
+
+compType2s(ct : ComparisonType) -> string {
+    switch (ct) {
+        Equal() : " == ";
+        Less() : " < ";
+    }
+}
+
+boolExpr2s(be : BooleanExpr) -> string {
+    switch (be) {
+        Comparison(l, r, ct) : expr2s(l) + compType2s(ct) + expr2s(r);
+        Not(e) : "!(" + boolExpr2s(e) + ")";
+        Or(l, r) : "(" + boolExpr2s(l) + ")" + " || " + "(" + boolExpr2s(r) + ")";
+        BoolConst(value) : boolConst2s(be);
+    }
+}
+
+expr2s(e : Expr) -> string {
+    switch (e) {
+        Var(name) : name;
+        NonBoolConst() : const2s(e);
+        ArithmExpr() : aExpr2s(e);
+        ArrayOp(arr, opType) : arrOp2s(e);
+        BooleanExpr() : boolExpr2s(e);
+    }
+}
+
+buildVarDecls(a : [flow]) {
+    VarDeclList(a[0]);
+}
+
+buildTrueConst(a : [flow]) {
+    BoolConst(true);
+}
+
+buildFalseConst(a : [flow]) {
+    BoolConst(false);
+}
+
+buildArrayConst(a : [flow]) {
+    if (length(a) == 0) {
+        ArrayConst(makeTree());
+    } else {
+        values = concat(a[0], a[1]);
+        treeOfValues = foldi(values, makeTree(), \i, acc, v -> setTree(acc, i, v));
+        ArrayConst(treeOfValues);
+    }
+}
+
+buildArithmSub(a : [flow]) {
+    fold(a[1], a[0], \acc, e -> ArithmBinary(acc, e, ArithmSubOp()))
+}
+
+buildArithmDiv(a : [flow]) {
+    fold(a[1], a[0], \acc, e -> ArithmBinary(acc, e, ArithmDivOp()))
+}
+
+buildLess_(e1 : Expr, e2 : Expr) {
+    Comparison(e1, e2, Less());
+}
+
+buildEqual_(e1 : Expr, e2 : Expr) {
+    Comparison(e1, e2, Equal());
+}
+
+buildLess(a : [flow]) {
+    buildLess_(a[0], a[1]);
+}
+
+buildEqual(a : [flow]) {
+    buildEqual_(a[0], a[1]);
+}
+
+buildLessOrEqual(a : [flow]) {
+    t1 = a[0];
+    t2 = a[1];
+    Or(buildEqual_(t1, t2), buildLess_(t1, t2));
+}
+
+buildGreater(a : [flow]) {
+    buildLess_(a[1], a[0]);
+}
+
+buildGreaterOrEqual(a : [flow]) {
+    t1 = a[0];
+    t2 = a[1];
+    Or(buildEqual_(t1, t2), buildLess_(t2, t1));
+}
+
+buildNotEqual(a : [flow]) {
+    Not(buildEqual_(a[0], a[1]));
+}
+
+buildAnd(a : [flow]) {
+    Not(Or(Not(a[0]), Not(a[1])));
+}
+
+buildBodiesSeq(a : [flow]) {
+    BodiesSeq(a[0]);
+}
+
+buildUDChoice(a : [flow]) {
+    UDChoice(concat([a[0]], a[1]));
+}
+
+specialPegActions = {
+    actions : [Pair<string, ([flow]) -> flow>] = [
+        Pair("buildVarDecls", buildVarDecls),
+        Pair("buildTrueConst", buildTrueConst),
+        Pair("buildFalseConst", buildFalseConst),
+        Pair("buildArrayConst", buildArrayConst),
+        Pair("buildArithmSub", buildArithmSub),
+        Pair("buildArithmDiv", buildArithmDiv),
+        Pair("buildLess", buildLess),
+        Pair("buildEqual", buildEqual),
+        Pair("buildLessOrEqual", buildLessOrEqual),
+        Pair("buildGreater", buildGreater),
+        Pair("buildGreaterOrEqual", buildGreaterOrEqual),
+        Pair("buildNotEqual", buildNotEqual),
+        Pair("buildAnd", buildAnd),
+        Pair("buildBodiesSeq", buildBodiesSeq),
+        Pair("buildUDChoice", buildUDChoice),
+    ];
+
+    SemanticActions(fold(
+        actions, defaultPegActions.t, \acc, p -> {
+            setTree(acc, p.first, p.second);
+        }
+    ));
+}
+
+parse(programString: string) -> flow {
+    grammar = compilePegGrammar("#include gram.lingo");
+    parsic(grammar, programString, specialPegActions);
+}
+
+analyseRes2s(res : AnalysisResult) -> string {
+    switch (res) {
+        Success() : "It is fine";
+        InvalidTypeError(e) : "Invalid type in: " + expr2s(e) + "!";
+        RedeclarationError(varName) : "Redeclaration var in: " + varName + "!";
+        AssignmentToUndeclaredVarError(varName) : "Assign in undeclared var: " + varName + "!";
+        AssignmentTypesMismatchError(a) : "Mismatch types: " + a.varName + ", " + expr2s(a.expr) + "!";
+    }
+}
+
+getDeclVars(program : NemoProgram) -> Tree<string, [VarDecl]> {
+    fold(program.varDeclList.elements, makeTree(), \acc, decl -> treePushToArrayValue(acc, decl.name, decl));
+}
+
+analyseDeclVars(declaredVariables : Tree<string, [VarDecl]>) -> AnalysisResult {
+    foldTree(declaredVariables, Success(), \varName, decls, acc -> {
+            if (acc != Success()) {
+                acc;
+            } else {
+                if (length(decls) > 1) {
+                    RedeclarationError(varName);
+                } else {
+                    Success();
+                }
+            }
+        }
+    );
+}
+
+areArraysWithSimilarType1(t1 : ExprType, t2 : ExprType) -> bool {
+    switch (t1) {
+        Array(bt1) : {
+            switch (t2) {
+                Array(bt2) : bt1 == AnyType() || bt2 == AnyType() || bt1 == bt2 || areArraysWithSimilarType1(bt1, bt2);   
+                default : false;
+            }
+        }
+        default : false;
+    }
+}
+
+areArraysWithSimilarType(ts : [ExprType]) -> bool {
+    foldi(ts, true, \i, acc, t -> {
+        if (i == length(ts) - 1) {
+            acc;
+        } else {
+            acc && areArraysWithSimilarType1(ts[i], ts[i + 1]);
+        }
+    });
+}
+
+chooseMostSpecificArrayType1(t1 : ExprType, t2 : ExprType) -> ExprType {
+    switch (t1) {
+        Array(bt1) : {
+            if (bt1 != AnyType()) {
+                t1;
+            } else {
+                switch (t2) {
+                    Array(bt2) : {
+                        t2;
+                    }
+                    default : NoType()
+                }
+            }
+        }
+        default : NoType();
+    }
+}
+
+chooseMostSpecificArrayType(ts : [ExprType]) -> ExprType {
+    fold(ts, Array(AnyType()), \acc, t -> {chooseMostSpecificArrayType1(acc, t);});
+}
+
+calcTypeOfConst(c : Const) -> ExprType {
+    switch (c) {
+        IntConst(value) : Int();
+        StringConst(value) : String();
+        BoolConst(value) : Bool();
+        RealConst(value) : Real();
+        ArrayConst(values) : {
+            keyValuePairs = tree2pairs(values);
+            valuesArray = map(keyValuePairs, \p -> p.second);
+            if (length(valuesArray) == 0) {
+                Array(AnyType());
+            } else {
+                elementsTypes = map(valuesArray, \v -> calcTypeOfConst(v));
+                if (contains(elementsTypes, NoType())) {
+                    NoType();
+                } else {
+                    if (areArraysWithSimilarType(elementsTypes)) {
+                        Array(chooseMostSpecificArrayType(elementsTypes));
+                    } else if (countA(elementsTypes, \e -> e == elementsTypes[0]) == length(elementsTypes)) {
+                        Array(elementsTypes[0]);
+                    } else {
+                        NoType();
+                    }
+                }
+            }
+        }
+    }
+}
+
+isTypeNumeric(t : ExprType) -> bool {
+    t == Int() || t == Real();
+}
+
+calcTypeOfArExpr(a : ArithmExpr, variablesTypes : Tree<string, ExprType>) -> ExprType {
+    switch (a) {
+        ArithmBinary(l, r, op) : {
+            lType = calcTypeOfExpr(l, variablesTypes);
+            rType = calcTypeOfExpr(r, variablesTypes);
+
+            if (lType == NoType() || rType == NoType() || lType != rType || !isTypeNumeric(lType)) {
+                NoType();
+            } else {
+                lType;
+            }
+        }
+        ArithmNeg(e) : {
+            eType = calcTypeOfExpr(e, variablesTypes);
+
+            if (!isTypeNumeric(eType)) {
+                NoType();
+            } else {
+                eType;
+            }
+        }
+    }
+}
+
+isArrayType(t : ExprType) -> bool {    
+    switch (t) {
+        Array(baseType) : true;
+        default : false;
+    }
+}
+
+calcTypeOfArrOp(op : ArrayOp, variablesTypes : Tree<string, ExprType>) -> ExprType {
+    firstOperand = op.arr;
+    firstOperandType = calcTypeOfExpr(firstOperand, variablesTypes);
+
+    switch (firstOperandType) {
+        Array(baseType) : {
+            switch (op.opType) {
+                ArrayUpdateOpType(ind, val) : {
+                    indType = calcTypeOfExpr(ind, variablesTypes);
+                    valType = calcTypeOfExpr(val, variablesTypes);
+                    if (indType != Int()) {
+                        NoType();
+                    } else if (baseType == AnyType() || baseType == valType) {
+                        Array(valType);
+                    } else {
+                        NoType();
+                    }
+                }
+                ArrayApplyOpType(ind) : {
+                    if (calcTypeOfExpr(ind, variablesTypes) != Int()) {
+                        NoType();
+                    } else {
+                        baseType;
+                    }
+                }
+                ArrayConcatOpType(arr2) : {
+                    secondOperandType = calcTypeOfExpr(arr2, variablesTypes);
+                    if (!areArraysWithSimilarType1(firstOperandType, secondOperandType)) {
+                        NoType();
+                    } else {
+                        chooseMostSpecificArrayType1(firstOperandType, secondOperandType);
+                    }
+                }
+                ArrayLengthOpType() : Int();
+            }
+        }
+        default : NoType();
+    }
+}
+
+isBoolExprCorrect(b : BooleanExpr, variablesTypes : Tree<string, ExprType>) -> bool {
+    switch (b) {
+        Comparison(l, r, cmpType) : {
+            lType = calcTypeOfExpr(l, variablesTypes);
+            rType = calcTypeOfExpr(r, variablesTypes);
+            if (lType == NoType() || rType == NoType() || lType != rType) {
+                false;
+            } else {
+                switch (cmpType) {
+                    Less() : isTypeNumeric(lType);
+                    Equal() : true;
+                }
+            }
+        }
+        Not(e) : isBoolExprCorrect(e, variablesTypes);
+        Or(l, r) : isBoolExprCorrect(l, variablesTypes) && isBoolExprCorrect(r, variablesTypes);
+        BoolConst(value) : true;
+    }
+}
+
+calcTypeOfExpr(e : Expr, variablesTypes : Tree<string, ExprType>) -> ExprType {
+    switch (e) {
+        Var(name) : lookupTreeDef(variablesTypes, name, NoType());
+        NonBoolConst() : calcTypeOfConst(e);
+        ArithmExpr() : calcTypeOfArExpr(e, variablesTypes);
+        ArrayOp(arr, opType) : calcTypeOfArrOp(e, variablesTypes);
+        BooleanExpr() : {
+            if (isBoolExprCorrect(e, variablesTypes)) {
+                Bool();
+            } else {
+                NoType();
+            }
+        }
+    }
+}
+
+analyseType(e : Expr, et : ExprType) -> AnalysisResult {
+    if (et == NoType()) {
+        InvalidTypeError(e);
+    } else {
+        Success();
+    }
+}
+
+analyseExpr(e : Expr, variablesTypes : Tree<string, ExprType>) -> AnalysisResult {
+    analyseType(e, calcTypeOfExpr(e, variablesTypes));
+}
+
+analyseAssign(a : Assignment, variablesTypes : Tree<string, ExprType>) -> AnalysisResult {
+    varName = a.varName;
+    expr = a.expr;
+
+    varType = lookupTreeDef(variablesTypes, varName, NoType());
+
+    if (varType == NoType()) {
+        AssignmentToUndeclaredVarError(varName);
+    } else {
+        exprType = calcTypeOfExpr(expr, variablesTypes);
+        if (exprType == NoType()) {
+            analyseType(expr, exprType);
+        } else {
+            if (exprType == varType || areArraysWithSimilarType1(exprType, varType)) {
+                Success();
+            } else {
+                AssignmentTypesMismatchError(a);
+            }
+        }
+    }
+}
+
+analyseTest(t : Test, variablesTypes : Tree<string, ExprType>) -> AnalysisResult {
+    analyseExpr(t.be, variablesTypes);
+}
+
+analysePrint(p : Print, variablesTypes : Tree<string, ExprType>) -> AnalysisResult {
+    analyseExpr(p.e, variablesTypes);
+}
+
+analyseBodies(bodies : [Body], variablesTypes : Tree<string, ExprType>) -> AnalysisResult {
+    fold(bodies, Success(), \acc, b -> {
+        if (acc != Success()) {
+            acc;
+        } else {
+            res = analyseBody(b, variablesTypes);
+            if (res != Success()) {
+                res;
+            } else {
+                Success();
+            }
+        }
+    });
+}
+
+analyseBody(body : Body, variablesTypes : Tree<string, ExprType>) -> AnalysisResult {    
+    switch (body) {
+        Assignment(varName, expr) : analyseAssign(body, variablesTypes);
+        BodiesSeq(bodies) : analyseBodies(bodies, variablesTypes);
+        Test(be) : analyseTest(body, variablesTypes);
+        Print(expr) : analysePrint(body, variablesTypes);
+        UDChoice(bodies) : analyseBodies(bodies, variablesTypes);
+        UDIteration(b) : analyseBody(b, variablesTypes);
+    }
+}
+
+analyse(program : NemoProgram) -> AnalysisResult {
+    declaredVariables = getDeclVars(program);
+
+    res1 = analyseDeclVars(declaredVariables);
+
+    if (res1 != Success()) {
+        res1;
+    } else {
+        variablesTypes = foldTree(
+            declaredVariables,
+            makeTree(),
+            \varName, decls, acc -> setTree(acc, varName, decls[0].type)
+        );
+        analyseBody(program.body, variablesTypes);
+    }
+}
+
+findMaxLabelOfOperation(operation : Operation) -> int {
+    findMaxOfArray = \a -> fold(a, 0, \acc, e -> max(acc, e));
+    
+    switch (operation) {
+        AssignmentOperation(varName, expr, labels) : findMaxOfArray(labels);
+        TestOperation(cond, ifLabels, elseLabels) : max(findMaxOfArray(ifLabels), findMaxOfArray(elseLabels));
+        PrintOperation(expr, labels) : findMaxOfArray(labels);
+    }
+}
+
+findMaxLabelOfOperator(operator : Operator) -> int {
+    max(operator.label, findMaxLabelOfOperation(operator.operation));
+}
+
+findMaxLabelOfOperators(operators : Set<Operator>) -> int {
+    foldSet(operators, 0, \acc, op -> max(acc, findMaxLabelOfOperator(op)));
+}
+
+increaseLabel(label : int, delta : int) -> int {
+    label + delta;
+}
+
+replaceLabel(label : int, newLabel : int, oldLabel : int) -> int {
+    if (label == oldLabel) {
+        newLabel;
+    } else {
+        label;
+    }
+}
+
+increaseLabelsOfOperation(operation : Operation, delta : int) -> Operation {
+    increaseLabels = \labels -> map(labels, \l -> increaseLabel(l, delta));
+    
+    switch (operation) {
+        AssignmentOperation(varName, expr, labels) : AssignmentOperation(varName, expr, increaseLabels(labels));
+        TestOperation(cond, ifLabels, elseLabels) : TestOperation(cond, increaseLabels(ifLabels), increaseLabels(elseLabels));
+        PrintOperation(expr, labels) : PrintOperation(expr, increaseLabels(labels));
+    }
+}
+
+replaceLabelsOfOperation(operation : Operation, newLabel : int, oldLabel : int) -> Operation {
+    replaceLabels = \labels -> map(labels, \l -> replaceLabel(l, newLabel, oldLabel));
+    
+    switch (operation) {
+        AssignmentOperation(varName, expr, labels) : AssignmentOperation(varName, expr, replaceLabels(labels));
+        TestOperation(cond, ifLabels, elseLabels) : TestOperation(cond, replaceLabels(ifLabels), replaceLabels(elseLabels));
+        PrintOperation(expr, labels) : PrintOperation(expr, replaceLabels(labels));
+    }
+}
+
+increaseLabelsOfOperators(operators : Set<Operator>, delta : int) -> Set<Operator> {
+    increaseLabelsOfOperator = \operator -> Operator(increaseLabel(operator.label, delta), increaseLabelsOfOperation(operator.operation, delta));
+    mapSet(operators, increaseLabelsOfOperator)
+}
+
+incrementLabelsOfOperators(operators : Set<Operator>) -> Set<Operator> {
+    increaseLabelsOfOperators(operators, 1);
+}
+
+replaceLabelsOfOperators(operators : Set<Operator>, newLabel : int, oldLabel : int) -> Set<Operator> {
+    replaceLabelsOfOperator = \operator -> Operator(replaceLabel(operator.label, newLabel, oldLabel), replaceLabelsOfOperation(operator.operation, newLabel, oldLabel));
+    mapSet(operators, replaceLabelsOfOperator);
+}
+
+translateVarDeclList(varDeclList : VarDeclList) -> string {
+    varDeclList2s(varDeclList);
+}
+
+bodies2Operators(bodies : [Body], f : (firstElement : Body, tailElements : [Body]) -> Set<Operator>) -> Set<Operator> {
+    len = length(bodies);
+
+    if (len == 0) {
+        makeSet();
+    } else if (len == 1) {
+        body2Operators(bodies[0]);
+    } else {
+        f(bodies[0], tail(bodies));
+    }
+}
+
+body2Operators(body : Body) ->  Set<Operator> {
+    createBranchingGoto = \l -> Operator(0, TestOperation(BoolConst(true), [1, l], []));
+    createStartOperator = \op -> Operator(0, op);
+
+    switch (body) {
+        Assignment(varName, expr) : makeSet1(createStartOperator(AssignmentOperation(varName, expr, [1])));
+        Test(booleanExpr) : makeSet1(createStartOperator(TestOperation(booleanExpr, [1], [])));
+        Print(expr) : makeSet1(createStartOperator(PrintOperation(expr, [1])));
+        BodiesSeq(bodies) : bodies2Operators(
+            bodies, \firstElement, tailElements -> {
+                s1 = body2Operators(firstElement);
+                l1 = findMaxLabelOfOperators(s1);
+
+                s2 = increaseLabelsOfOperators(
+                    body2Operators(BodiesSeq(tailElements)),
+                    l1
+                );
+
+                mergeSets(s1, s2);
+            }
+        );
+        UDChoice(bodies) : bodies2Operators(
+            bodies, \firstElement, tailElements -> {
+                s1 = incrementLabelsOfOperators(body2Operators(bodies[0]));
+                l1 = findMaxLabelOfOperators(s1);
+
+                s2 = increaseLabelsOfOperators(
+                    body2Operators(UDChoice(tail(bodies))),
+                    l1
+                );
+                l2 = findMaxLabelOfOperators(s2);
+
+                s3 = makeSet1(createBranchingGoto(l1));
+
+                mergeSetsA([
+                    replaceLabelsOfOperators(s1, l2, l1),
+                    s2,
+                    s3
+                ]);
+            }
+        );
+        UDIteration(b1) : {
+            s1 = incrementLabelsOfOperators(body2Operators(b1));
+            l1 = findMaxLabelOfOperators(s1);
+
+            s2 = makeSet1(createBranchingGoto(l1));
+
+            mergeSets(
+                replaceLabelsOfOperators(s1, 0, l1),
+                s2
+            );
+        }
+    }
+}
+
+translateBody(body : Body) -> string {
+    s = body2Operators(body);
+    a = set2array(s);
+    fold(sortOperators(a), "", \acc, o -> acc + operator2s(o) + "\n");
+}
+
+tabs(count : int) -> string {
+    fold(range(count), "", \acc, e -> acc + "\t");
+}
+
+backToNemoBody(body : Body, count : int) -> Pair<string, bool> {
+    switch (body) {
+        Assignment(varName, expr) : {
+            tmpS = tabs(count) + varName + " := " + expr2s(expr) + ";\n";
+            Pair(tmpS, false);
+        }
+        Test(booleanExpr) : {
+            tmpS = tabs(count) + "(" + boolExpr2s(booleanExpr) + ")?;\n";
+            Pair(tmpS, false);
+        }
+        Print(expr) : {
+            tmpS = tabs(count) + "print(" + expr2s(expr) + ");\n";
+            Pair(tmpS, false);
+        }
+        BodiesSeq(bodies) : {
+            tmpS = fold(bodies, "", \acc, b -> {
+                tmpS1 = backToNemoBody(b, count);
+                acc + tmpS1.first;
+            });
+            Pair(tmpS, true);
+        }
+        UDChoice(bodies) : {
+            arrB = fold(bodies, [], \acc, b -> {
+                bVar = backToNemoBody(b, count+1);
+                concat(acc, [bVar.second]);
+            });
+            if (arrB == [false]) {
+                tmpS = fold(bodies, "", \acc, b -> {
+                    tmpS1 = backToNemoBody(b, count);
+                    acc + tmpS1.first;
+                });
+                Pair(tmpS, false);
+            } else {
+                if (count > 0) {
+                    tmpS = "\n" + tabs(count) + "U\n\n" + tabs(count) + "{\n" + fold(bodies, "", \acc, b -> {
+                        tmpS1 = backToNemoBody(b, count+1);
+                        acc + tmpS1.first;
+                    }) + tabs(count) + "};\n\n";
+                    Pair(tmpS, false);
+                } else {
+                    tmpS = "\n" + tabs(count) + "{\n" + fold(bodies, "", \acc, b -> {
+                        tmpS1 = backToNemoBody(b, count+1);
+                        acc + tmpS1.first;
+                    }) + tabs(count) + "};\n\n";
+                    Pair(tmpS, false);
+                }
+            }
+        }
+        UDIteration(b) : {
+            tmpS1 = backToNemoBody(b, count+1);
+            tmpS = "\n" + tabs(count) + "{\n" + tmpS1.first + tabs(count) + "}*;\n\n";
+            Pair(tmpS, false);
+        }
+    }
+}
+
+translate(program : NemoProgram) -> string {
+    translateVarDeclList(program.varDeclList) + "\n" + translateBody(program.body);
+}
+
+backToNemo(program : NemoProgram) -> string {
+    btnb = backToNemoBody(program.body, -1);
+    println(program.body);
+    varDeclList2s(program.varDeclList) + "\n" + btnb.first;
+}
+
+main() {
+    program = parse("#include prog.nemo");
+    result = analyse(program);
+
+    if (result != Success()) {
+        println(analyseRes2s(result));
+    } else {
+        if (!setFileContent("./prog.out", backToNemo(program))) {
+            println("Can`t write to file");
+        }
+    }
+    
+    quit(0);
+}

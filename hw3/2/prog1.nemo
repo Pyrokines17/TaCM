@@ -1,0 +1,13 @@
+VAR x : INT; VAR a : INT; VAR b : INT; VAR c : [INT];
+
+{
+    
+    {
+        x := 0;
+        a := 0;
+        b := 1;
+
+        c := UPD(x, a, b);
+    };
+    
+};
