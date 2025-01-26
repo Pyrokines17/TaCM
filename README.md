@@ -1,1 +1,1 @@
-# Repository for Translation and Compilation Methods labs
+# Repository for "Translation and Compilation Methods" labs
